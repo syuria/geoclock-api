@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Real Postgres and Redis, so CI tests what production runs.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: geoclock
+          POSTGRES_PASSWORD: geoclock
+          POSTGRES_DB: geoclock_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U geoclock"
+          --health-interval 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://geoclock:geoclock@localhost:5432/geoclock_test
+      TEST_REDIS_URL: redis://localhost:6379/1
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: pytest --cov=app --cov-report=term-missing

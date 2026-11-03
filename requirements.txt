@@ -1,0 +1,8 @@
+Flask==3.1.*
+Flask-SQLAlchemy==3.1.*
+Flask-Migrate==4.*
+SQLAlchemy==2.0.*
+psycopg[binary]==3.2.*
+redis==5.*
+pydantic[email]==2.*
+gunicorn==23.*
