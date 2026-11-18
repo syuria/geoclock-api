@@ -31,3 +31,19 @@ Timesheet query for one employee and one month, on 100,000 seeded shifts
 The composite index matches the query's filter (employee first, then a date range),
 so Postgres reads only the 39 matching rows instead of scanning all 100,000 and
 discarding 99,961. The gap grows with table size.
+
+## Deployment
+
+Infrastructure as code in `infra/terraform-ec2/` (Terraform, AWS `eu-north-1`):
+
+- EC2 `t3.small` (Ubuntu 24.04) running the Docker Compose stack: Flask API, Postgres, Redis
+- Security group allowing only port 8000, only from my IP; no SSH port
+- Access via Systems Manager Session Manager (IAM role with only the SSM policy)
+- IMDSv2 required, encrypted root volume
+- First boot (`user_data.sh`) installs Docker, clones this repo, starts the stack and runs `flask db upgrade`
+
+Deployed and tested end to end (clock-in, geofence rejection, timesheet, payroll CSV), then destroyed with `terraform destroy`.
+
+Not production-ready by design: plain HTTP, database in a container on one server.
+Production would use RDS and ElastiCache in private subnets, HTTPS behind a load balancer,
+secrets in Secrets Manager, and CI/CD deploying on merge.
