@@ -1,7 +1,7 @@
 variable "region" {
-  description = "AWS region. eu-west-2 is London."
+  description = "AWS region. My AWS project is fixed to eu-north-1 (Stockholm)."
   type        = string
-  default     = "eu-west-2"
+  default     = "eu-north-1"
 }
 
 variable "owner" {
