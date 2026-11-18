@@ -56,3 +56,30 @@ def test_payroll_export_csv(client, employee, site):
     assert len(rows) == 1
     assert Decimal(rows[0]["hours"]) == Decimal("15.5")
     assert rows[0]["gross_pay"] == "193.75"  # 15.5 h x £12.50
+
+WEEK2 = "start=2026-11-02&end=2026-11-15"   # two full weeks, Mon 2 Nov to Sun 15 Nov
+
+
+def test_overtime_over_40_hours_in_a_week(client, employee, site):
+    # Five 9-hour shifts, Monday to Friday = 45 hours in one week
+    for day in range(5):
+        add_shift(employee["id"], site["id"], MON + timedelta(days=day), 9)
+
+    r = client.get(f"/api/payroll/export?{WEEK2}")
+    row = list(csv.DictReader(io.StringIO(r.get_data(as_text=True))))[0]
+    assert Decimal(row["hours"]) == Decimal("45")
+    assert Decimal(row["regular_hours"]) == Decimal("40")
+    assert Decimal(row["overtime_hours"]) == Decimal("5")
+    assert row["gross_pay"] == "593.75"   # 40 x 12.50 + 5 x 12.50 x 1.5
+
+
+def test_overtime_is_counted_per_week_not_per_period(client, employee, site):
+    # 30 hours in each of two weeks = 60 hours total, but no single week over 40
+    for week in range(2):
+        for day in range(4):
+            add_shift(employee["id"], site["id"], MON + timedelta(weeks=week, days=day), 7.5)
+
+    r = client.get(f"/api/payroll/export?{WEEK2}")
+    row = list(csv.DictReader(io.StringIO(r.get_data(as_text=True))))[0]
+    assert Decimal(row["overtime_hours"]) == Decimal("0")
+    assert row["gross_pay"] == "750.00"   # 60 x 12.50
