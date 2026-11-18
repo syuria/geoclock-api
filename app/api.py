@@ -14,6 +14,9 @@ from .geo import inside_geofence
 from .models import Employee, Site, TimeEntry, utcnow
 from .schemas import ClockInIn, ClockOutIn, EmployeeIn, PeriodQuery, SiteIn
 
+OVERTIME_THRESHOLD = Decimal("40")    # hours per week
+OVERTIME_MULTIPLIER = Decimal("1.5")
+
 bp = Blueprint("api", __name__)
 
 
@@ -152,17 +155,35 @@ def payroll_export():
         .order_by(Employee.id)
     ).all()
 
-    totals = {}
+    # 1. Add up each employee's hours per ISO week (Monday to Sunday).
+    weekly = {}   # (employee_id, iso_year, iso_week) -> hours
+    employees = {}
     for emp, entry in rows:
-        hours, _ = totals.get(emp.id, (Decimal("0"), emp))
-        totals[emp.id] = (hours + Decimal(str(entry.hours)), emp)
+        employees[emp.id] = emp
+        iso_year, iso_week, _ = entry.clock_in.isocalendar()
+        key = (emp.id, iso_year, iso_week)
+        weekly[key] = weekly.get(key, Decimal("0")) + Decimal(str(entry.hours))
 
+    # 2. Split each week into regular and overtime, then total per employee.
+    totals = {}   # employee_id -> [regular, overtime]
+    for (emp_id, _year, _week), week_hours in weekly.items():
+        regular = min(week_hours, OVERTIME_THRESHOLD)
+        overtime = max(week_hours - OVERTIME_THRESHOLD, Decimal("0"))
+        t = totals.setdefault(emp_id, [Decimal("0"), Decimal("0")])
+        t[0] += regular
+        t[1] += overtime
+
+    # 3. Write one CSV row per employee.
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["employee_id", "name", "email", "hours", "hourly_rate", "gross_pay"])
-    for emp_id, (hours, emp) in totals.items():
-        pay = (hours * emp.hourly_rate).quantize(Decimal("0.01"))
-        w.writerow([emp_id, emp.name, emp.email, hours, emp.hourly_rate, pay])
+    w.writerow(["employee_id", "name", "email", "hours", "regular_hours",
+                "overtime_hours", "hourly_rate", "gross_pay"])
+    for emp_id, (regular, overtime) in totals.items():
+        emp = employees[emp_id]
+        rate = emp.hourly_rate
+        pay = (regular * rate + overtime * rate * OVERTIME_MULTIPLIER).quantize(Decimal("0.01"))
+        w.writerow([emp_id, emp.name, emp.email, regular + overtime, regular,
+                    overtime, rate, pay])
 
     filename = f"payroll_{q.start}_{q.end}.csv"
     return Response(buf.getvalue(), mimetype="text/csv",
